@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>性能控制</title>
+<style>
+:root{
+  --bg:#0b0e14;--card:#141922;--line:#1f2731;--text:#e6edf3;--dim:#7d8590;
+  --acc:#2f81f7;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--purple:#a371f7;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;padding:12px 11px 30px;background:var(--bg);color:var(--text);
+  font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+h1{font-size:16px;margin:0 0 2px;font-weight:600}
+.sub{color:var(--dim);font-size:11px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px}
+.card h2{font-size:10.5px;margin:0 0 10px;color:var(--dim);font-weight:600;letter-spacing:1.1px;text-transform:uppercase}
+.row{display:flex;justify-content:space-between;align-items:baseline;padding:3.5px 0;font-size:12.5px}
+.k{color:var(--dim)}
+.v{font-variant-numeric:tabular-nums;font-weight:600}
+.v.ok{color:var(--ok)}.v.warn{color:var(--warn)}.v.bad{color:var(--bad)}.v.acc{color:var(--acc)}
+.bar{height:5px;background:#1f2731;border-radius:3px;overflow:hidden;margin:8px 0 2px}
+.bar>i{display:block;height:100%;width:0;transition:width .3s;border-radius:3px}
+.pill{display:inline-block;padding:1.5px 7px;border-radius:100px;font-size:10.5px;font-weight:600;
+  background:rgba(63,185,80,.14);color:var(--ok)}
+.pill.off{background:rgba(248,81,73,.14);color:var(--bad)}
+.pill.warn{background:rgba(210,153,34,.14);color:var(--warn)}
+label.f{display:block;margin-bottom:12px}
+label.f:last-child{margin-bottom:0}
+.lbl{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px}
+.lbl b{color:var(--acc);font-weight:600;font-variant-numeric:tabular-nums}
+.lbl span.t{color:var(--dim);font-size:11px;font-weight:400}
+input[type=range]{-webkit-appearance:none;width:100%;height:3px;border-radius:2px;background:#2b3440;outline:none;margin:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:var(--acc);border:2.5px solid var(--bg);box-shadow:0 0 0 1px var(--acc)}
+input[type=range]:disabled{opacity:.4}
+select{width:100%;padding:7px 9px;border-radius:7px;background:#0b0e14;color:var(--text);
+  border:1px solid var(--line);font-size:12.5px;outline:none}
+.hint{color:var(--dim);font-size:10.5px;margin-top:4px;line-height:1.35}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btns.t4{grid-template-columns:repeat(4,1fr)}
+button{padding:10px 4px;border-radius:8px;border:1px solid var(--line);background:#1f2731;
+  color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;transition:.13s;font-family:inherit}
+button:active{transform:scale(.97);opacity:.8}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.danger{background:transparent;border-color:#5c2b2b;color:var(--bad)}
+button.on{background:rgba(47,129,247,.18);border-color:var(--acc);color:var(--acc)}
+button:disabled{opacity:.4;pointer-events:none}
+#toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,18px);background:#238636;color:#fff;
+  padding:9px 18px;border-radius:100px;font-size:12.5px;font-weight:600;opacity:0;pointer-events:none;
+  transition:.24s;z-index:99;max-width:90vw;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.55)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast.err{background:#b62324}
+.warnbox{background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.25);border-radius:8px;
+  padding:8px 10px;font-size:11px;color:#ffa198;line-height:1.4;margin-top:8px}
+.gauge{display:flex;gap:6px;margin-top:8px}
+.gauge>div{flex:1;background:#0b0e14;border-radius:7px;padding:6px 4px;text-align:center}
+.gauge .n{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15}
+.gauge .l{font-size:9.5px;color:var(--dim);margin-top:1px}
+</style>
+</head>
+<body>
+
+<h1>性能控制</h1>
+<div class="sub">CPU 三集群限频 · uclamp · GPU 档位 · oiface 控制</div>
+
+<!-- 状态 -->
+<div class="card">
+  <h2>实时状态</h2>
+  <div class="gauge">
+    <div><div class="n acc" id="g0">—</div><div class="l">A520 ×4</div></div>
+    <div><div class="n acc" id="g4">—</div><div class="l">A720 ×3</div></div>
+    <div><div class="n acc" id="g7">—</div><div class="l">X4 ×1</div></div>
+    <div><div class="n purple" id="gg">—</div><div class="l">GPU</div></div>
+  </div>
+  <div class="row" style="margin-top:8px"><span class="k">oiface</span><span class="v" id="s-oif">—</span></div>
+  <div class="row"><span class="k">uclamp_max（调度器利用率上限）</span><span class="v" id="s-uc">—</span></div>
+  <div class="row"><span class="k">限频生效</span><span class="v" id="s-active">—</span></div>
+  <div class="row"><span class="k">温度（X4 / A720 / A520）</span><span class="v" id="s-temp">—</span></div>
+  <div class="row"><span class="k">前台应用</span><span class="v" id="s-fg" style="font-size:11px">—</span></div>
+  <div class="row"><span class="k">负载 / 电量</span><span class="v" id="s-load">—</span></div>
+</div>
+
+<!-- 预设 -->
+<div class="card">
+  <h2>预设</h2>
+  <div class="btns t4">
+    <button id="p-save">省电</button>
+    <button id="p-balance">均衡</button>
+    <button id="p-perf">性能</button>
+    <button id="p-stock">原厂</button>
+  </div>
+  <div class="hint" id="p-hint">
+    均衡 = 原厂频率 + uclamp 512，实测比原厂省 25% 能耗、吞吐几乎不变。<br>
+    省电档只在<strong>持续重载</strong>（游戏/压测）下比均衡再省一点，单线程反而更耗。
+  </div>
+</div>
+
+<!-- 实测依据 -->
+<div class="card">
+  <h2>实测依据（本机真测）</h2>
+  <div style="font-size:11px;color:#7d8590;line-height:1.5">
+    固定工作量下的总能耗，越低越好。
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:7px;font-variant-numeric:tabular-nums">
+    <tr style="color:#7d8590">
+      <td style="padding:3px 0">配置</td>
+      <td style="text-align:right">uclamp</td>
+      <td style="text-align:right">功耗</td>
+      <td style="text-align:right">8线程</td>
+      <td style="text-align:right">1线程</td>
+    </tr>
+    <tr><td style="padding:3px 0">性能 2600/2900</td><td style="text-align:right">1024</td><td style="text-align:right;color:#f85149">13.6W</td><td style="text-align:right">135J</td><td style="text-align:right">57.1J</td></tr>
+    <tr><td style="padding:3px 0">原厂 2300/2500</td><td style="text-align:right">1024</td><td style="text-align:right">11.0W</td><td style="text-align:right">109J</td><td style="text-align:right">54.2J</td></tr>
+    <tr><td style="padding:3px 0;color:#3fb950">均衡（原厂+uc512）</td><td style="text-align:right;color:#3fb950">512</td><td style="text-align:right;color:#3fb950">8.2W</td><td style="text-align:right;color:#3fb950">82J</td><td style="text-align:right;color:#3fb950">42.1J</td></tr>
+    <tr><td style="padding:3px 0">原厂 + uc384</td><td style="text-align:right">384</td><td style="text-align:right">6.2W</td><td style="text-align:right">76J</td><td style="text-align:right">47.3J</td></tr>
+    <tr><td style="padding:3px 0">省电 1400/1400+uc256</td><td style="text-align:right">256</td><td style="text-align:right;color:#3fb950">3.0W</td><td style="text-align:right;color:#3fb950">61J</td><td style="text-align:right;color:#d29922">48.1J</td></tr>
+  </table>
+  <div style="font-size:10.5px;color:#7d8590;line-height:1.4;margin-top:8px">
+    · <strong>uclamp 是比限频更好的旋钮</strong>：让调度器自己选低频，仍保留突发余量<br>
+    · 均衡档 8 线程吞吐与原厂持平（2.40 vs 2.42M/s），能耗却降 25%<br>
+    · 省电档单线程反而比均衡耗电（48J vs 42J）——race-to-idle 拐点<br>
+    · 关掉 X4 大核是<strong>负优化</strong>，实测 240J &gt; 225J<br>
+    · 待机电流各档几乎相同（165 / 159 mA）——这些旋钮治不了待机耗电
+  </div>
+</div>
+
+<!-- CPU -->
+<div class="card">
+  <h2>CPU 上限</h2>
+  <label class="f">
+    <div class="lbl"><span>X4 超大核 <span class="t">cpu7</span></span><b id="v7">—</b></div>
+    <input type="range" id="i7" min="600000" max="3250000" step="100000" value="3250000">
+  </label>
+  <label class="f">
+    <div class="lbl"><span>A720 性能核 <span class="t">cpu4-6</span></span><b id="v4">—</b></div>
+    <input type="range" id="i4" min="550000" max="2850000" step="50000" value="2850000">
+  </label>
+  <label class="f">
+    <div class="lbl"><span>A520 能效核 <span class="t">cpu0-3</span></span><b id="v0">—</b></div>
+    <input type="range" id="i0" min="300000" max="2000000" step="100000" value="2000000">
+  </label>
+  <label class="f">
+    <div class="lbl"><span>GPU 上限</span><b id="vg">—</b></div>
+    <input type="range" id="ig" min="1" max="41" step="1" value="24">
+    <div class="hint">索引 1 = 1300MHz，24 = 702MHz，41 = 260MHz</div>
+  </label>
+</div>
+
+<!-- uclamp -->
+<div class="card">
+  <h2>uclamp_max（推荐）</h2>
+  <label class="f">
+    <div class="lbl"><span>调度器利用率上限</span><b id="vu">—</b></div>
+    <input type="range" id="iu" min="64" max="1024" step="16" value="1024">
+    <div class="hint" id="uc-hint">1024 = 不限制（出厂）</div>
+  </label>
+  <div class="hint">
+    这个旋钮告诉调度器「任务有多重」，让它自己选频率，<strong>保留突发余量</strong>，
+    不会像硬限频那样把任务拖长。<br>
+    实测：512 在 8 线程吞吐不变的前提下省 25% 能耗，单线程省 22%。<br>
+    建议：日常 512，重载 384，长时压测/游戏 256。<br>
+    <span style="color:#d29922">注意：内核要求 min ≤ max，本模块会自动先降 min 再写 max。</span>
+  </div>
+</div>
+
+<!-- oiface -->
+<div class="card">
+  <h2>oiface 厂商调度</h2>
+  <div class="row" style="padding-top:0">
+    <span class="k">当前状态</span><span class="v" id="s-oif2">—</span>
+  </div>
+  <div class="row">
+    <span class="k">配置（是否要求停止）</span><span class="v" id="s-oif3">—</span>
+  </div>
+  <div class="btns" style="margin-top:9px">
+    <button id="b-oif-off">停止 oiface</button>
+    <button id="b-oif-on">恢复 oiface</button>
+  </div>
+  <div class="hint" id="oif-hint">
+    <strong>不需要停。</strong>实测 8 线程满载 20 秒、息屏↔亮屏 35 秒、切 App，
+    `scaling_max_freq` / `uclamp` / GPU 档位全部纹丝不动。
+    停掉 oiface 反而会丢掉厂商的触控/游戏 boost。<br>
+    <span style="color:#3fb950">「停止」会记住设置，之后点「应用配置」或预设<strong>不会</strong>把它重新拉起来。</span>
+  </div>
+</div>
+
+<!-- 应用 -->
+<div class="card">
+  <h2>生效</h2>
+  <div class="btns">
+    <button class="primary" id="b-apply">应用配置</button>
+    <button id="b-refresh">刷新</button>
+  </div>
+  <div class="btns" style="margin-top:8px">
+    <button class="danger" id="b-reset">恢复出厂</button>
+    <button id="b-boot">开机自启</button>
+  </div>
+  <div class="hint" id="boot-hint">开机自启：未启用</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const MODDIR = "/data/adb/modules/perf_ctl";
+const CTL = MODDIR + "/scripts/ctl.sh";
+const GPU_FREQ = [1300,1274,1248,1222,1196,1170,1144,1118,1092,1066,1040,1014,
+  988,962,936,910,884,858,832,806,780,754,728,702,676,650,624,598,572,546,
+  520,494,468,442,416,390,364,338,312,286,260];
+
+/* 预设: [p0max, p4max, p7max, gpu_idx, uclamp_max]
+   注意：预设不包含 oiface 开关，避免一键预设把用户手动停掉的 oiface 又拉起来 */
+const PRESETS = {
+  save:    [1200000,1400000,1400000,38,256],
+  balance: [2000000,2300000,2500000,24,512],
+  stock:   [2000000,2300000,2500000,24,1024],
+  perf:    [2000000,2600000,2900000,20,1024]
+};
+
+function toast(m, err){
+  const t=document.getElementById("toast");
+  t.textContent=m; t.className="show"+(err?" err":"");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.className="",2300);
+}
+function raw(cmd){
+  return new Promise((res,rej)=>{
+    if(typeof ksu==="undefined"){rej(new Error("请在 KernelSU 管理器中打开"));return;}
+    const cb="cb_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
+    window[cb]=(errno,stdout,stderr)=>{delete window[cb];res({errno,stdout:stdout||"",stderr:stderr||""});};
+    try{ksu.exec(cmd,"{}",cb);}catch(e){delete window[cb];rej(e);}
+  });
+}
+/* 自动探测执行身份：
+   KernelSU WebUI 本身常常已经是 root，此时再套一层 su 可能失败/卡住，
+   所以先试裸命令，只有非 root 才套 su。*/
+let ROOT=null;
+async function probe(){
+  if(ROOT!==null) return ROOT;
+  try{ const r=await raw("id"); ROOT=(r.errno===0 && /uid=0/.test(r.stdout)); }
+  catch(e){ ROOT=false; }
+  return ROOT;
+}
+async function sh(cmd){
+  if(await probe()) return raw(cmd);
+  return raw("su -c '"+cmd.replace(/'/g,"'\\''")+"'");
+}
+function mhz(v){ return (v/1000).toFixed(v%1000?2:0); }
+
+let D={};
+async function status(){
+  const r=await sh("sh "+CTL+" status");
+  if(!r.stdout){toast("读取失败: "+r.stderr,true);return;}
+  D={};
+  r.stdout.trim().split("\n").forEach(l=>{const i=l.indexOf("=");if(i>0)D[l.slice(0,i)]=l.slice(i+1);});
+
+  // 频率 gauge
+  ["0","4","7"].forEach(c=>{
+    document.getElementById("g"+c).textContent = mhz(+D["p"+c+"_cur"]||0);
+  });
+  const gf=(D.gpu_cur||"").split(" ");
+  const gfreq=gf[1]?+gf[1]:0;
+  document.getElementById("gg").textContent = gfreq?(gfreq/1000).toFixed(0)+"": "—";
+
+  // oiface
+  const off = D.oiface!=="running";
+  const p=`<span class="pill ${off?"off":""}">${off?"已停止":"运行中"}</span>`;
+  document.getElementById("s-oif").innerHTML=p;
+  document.getElementById("s-oif2").innerHTML=p+" <span style='color:#7d8590;font-size:11px'>"+D.oiface+"</span>";
+  const wantOff = D.cfg_oiface_off==="1";
+  document.getElementById("s-oif3").innerHTML = wantOff
+    ? '<span class="pill warn">已记住：保持停止</span>'
+    : '<span class="pill">不干预（保持运行）</span>';
+  document.getElementById("b-oif-off").className = off?"on":"";
+  document.getElementById("b-oif-on").className = off?"":"on";
+
+  // 限频生效状态 + 漂移检测
+  const act = D.cfg_active==="1";
+  let drift=false;
+  ["0","4","7"].forEach(c=>{
+    if(+D["p"+c+"_max"] !== +D["p"+c+"_cfg_max"]) drift=true;
+  });
+  if(D.cfg_uclamp_max!==undefined && +D.uclamp_max !== +D.cfg_uclamp_max) drift=true;
+  if(D.cfg_gpu_idx!==undefined && +D.gpu_idx !== +D.cfg_gpu_idx) drift=true;
+  const ae=document.getElementById("s-active");
+  if(!act){ ae.innerHTML='<span class="pill warn">未启用</span>'; }
+  else if(drift){ ae.innerHTML='<span class="pill warn">已开启 · 有漂移</span>'; }
+  else { ae.innerHTML='<span class="pill">已开启 · 稳定</span>'; }
+
+  // 温度
+  const tb=(+D.t_big/1000).toFixed(0), tm=(+D.t_med/1000).toFixed(0), tl=(+D.t_little/1000).toFixed(0);
+  const el=document.getElementById("s-temp");
+  el.textContent=`${tb}° / ${tm}° / ${tl}°`;
+  const mx=Math.max(+tb,+tm,+tl);
+  el.className="v "+(mx>=75?"bad":mx>=60?"warn":"ok");
+
+  document.getElementById("s-fg").textContent=D.fg||"—";
+  const la=+D.loadavg||0;
+  const ld=document.getElementById("s-load");
+  ld.textContent=`${la.toFixed(1)} / 8核 · ${D.batt||"?"}%`;
+  ld.className="v "+(la>12?"bad":la>6?"warn":"ok");
+
+  // uclamp 状态
+  const uc=+D.uclamp_max||0;
+  const uce=+D.uclamp_eff_max||0;
+  const ul=document.getElementById("s-uc");
+  ul.textContent=uc+(uce&&uce!==uc?`  (任务实际 ${uce})`:uc===1024?"  (不限制)":"");
+  ul.className="v "+(uc>=1024?"ok":uc>=512?"warn":"bad");
+  if(!window._drag){
+    document.getElementById("iu").value=Math.max(64,Math.min(1024,uc));
+    document.getElementById("vu").textContent=uc===1024?"1024 (不限制)":uc+"";
+    document.getElementById("uc-hint").textContent =
+      uc===1024?"1024 = 不限制（出厂）"
+      :uc>=512?"轻度限制 —— 日常推荐区间"
+      :uc>=320?"中度限制 —— 适合重载"
+      :"强限制 —— 性能下滑明显";
+  }
+
+  // 滑块同步（只在未拖动时）
+  if(!window._drag){
+    setS("i7","v7",+D.p7_cfg_max,"p7_hwmax","MHz");
+    setS("i4","v4",+D.p4_cfg_max,"p4_hwmax","MHz");
+    setS("i0","v0",+D.p0_cfg_max,"p0_hwmax","MHz");
+    const gi=+D.cfg_gpu_idx||24;
+    document.getElementById("ig").value=gi;
+    document.getElementById("vg").textContent=GPU_FREQ[gi-1]+" MHz";
+    ["i0","i4","i7"].forEach(id=>{
+      const c=id==="i7"?"7":id==="i4"?"4":"0";
+      document.getElementById(id).max=+D["p"+c+"_hwmax"];
+    });
+  }
+  // 开机自启状态
+  const ab=D.cfg_auto_boot;
+  if(ab!==undefined){
+    document.getElementById("b-boot").className = ab==="1"?"on":"";
+    document.getElementById("boot-hint").textContent = "开机自启："+(ab==="1"?"已启用":"未启用");
+  }
+}
+function setS(iid,vid,val,hwkey,unit){
+  const el=document.getElementById(iid);
+  if(+el.value!==val) el.value=val;
+  const hw=+D[hwkey]||+el.max;
+  document.getElementById(vid).textContent=mhz(val)+" "+unit+(val>=hw?" (满)":"");
+}
+function bindT(id,vid){
+  const el=document.getElementById(id), out=document.getElementById(vid);
+  el.addEventListener("pointerdown",()=>window._drag=true);
+  el.addEventListener("pointerup",()=>setTimeout(()=>window._drag=false,250));
+  el.addEventListener("input",()=>{
+    if(id==="ig") out.textContent=GPU_FREQ[+el.value-1]+" MHz";
+    else if(id==="iu"){
+      const u=+el.value;
+      out.textContent=u===1024?"1024 (不限制)":u+"";
+      document.getElementById("uc-hint").textContent =
+        u===1024?"1024 = 不限制（出厂）"
+        :u>=512?"轻度限制 —— 日常推荐区间"
+        :u>=320?"中度限制 —— 适合重载"
+        :"强限制 —— 性能下滑明显";
+    }
+    else out.textContent=mhz(+el.value)+" MHz";
+  });
+}
+["i0","i4","i7","ig","iu"].forEach(id=>bindT(id,"v"+(id==="ig"?"g":id==="iu"?"u":id.slice(1))));
+
+function fill(p){
+  document.getElementById("i7").value=p[2];
+  document.getElementById("i4").value=p[1];
+  document.getElementById("i0").value=p[0];
+  document.getElementById("ig").value=p[3];
+  document.getElementById("iu").value=p[4];
+  document.getElementById("v7").textContent=mhz(p[2])+" MHz";
+  document.getElementById("v4").textContent=mhz(p[1])+" MHz";
+  document.getElementById("v0").textContent=mhz(p[0])+" MHz";
+  document.getElementById("vg").textContent=GPU_FREQ[p[3]-1]+" MHz";
+  document.getElementById("vu").textContent=p[4]===1024?"1024 (不限制)":p[4]+"";
+}
+
+let busy=false;
+async function apply(p){
+  if(busy)return; busy=true;
+  document.getElementById("b-apply").disabled=true;
+  const v0=+document.getElementById("i0").value;
+  const v4=+document.getElementById("i4").value;
+  const v7=+document.getElementById("i7").value;
+  const gi=+document.getElementById("ig").value;
+  const uu=+document.getElementById("iu").value;
+  // oiface 开关不从预设里取，永远沿用当前持久化的设置
+  const oo = (D.cfg_oiface_off==="1") ? 1 : 0;
+  try{
+    const r=await sh(`sh ${CTL} apply ${v0} ${v4} ${v7} ${gi} ${oo} ${uu}`);
+    if(r.stdout.indexOf("OK")>=0) toast("已应用");
+    else toast("失败: "+(r.stderr||r.stdout).trim().slice(0,60),true);
+    await new Promise(x=>setTimeout(x,500));
+    await status();
+  }catch(e){toast(e.message,true);}
+  document.getElementById("b-apply").disabled=false;
+  busy=false;
+}
+
+document.getElementById("b-apply").onclick=()=>apply();
+
+Object.keys(PRESETS).forEach(k=>{
+  const b=document.getElementById("p-"+k);
+  if(!b)return;
+  b.onclick=async()=>{
+    const p=PRESETS[k];
+    fill(p);
+    await apply(p);
+  };
+});
+
+document.getElementById("b-oif-off").onclick=async()=>{
+  const r=await sh(`sh ${CTL} oiface off`);
+  const ok=r.stdout.indexOf("OK")>=0;
+  toast(ok?"oiface 已停止（已保存）":"失败: "+(r.stderr||r.stdout).trim().slice(0,50), !ok);
+  setTimeout(status,500);
+};
+document.getElementById("b-oif-on").onclick=async()=>{
+  const r=await sh(`sh ${CTL} oiface on`);
+  const ok=r.stdout.indexOf("OK")>=0;
+  toast(ok?"oiface 已恢复（已保存）":"失败: "+(r.stderr||r.stdout).trim().slice(0,50), !ok);
+  setTimeout(status,500);
+};
+document.getElementById("b-refresh").onclick=()=>status().catch(e=>toast(e.message,true));
+document.getElementById("b-reset").onclick=async()=>{
+  const r=await sh(`sh ${CTL} reset`);
+  toast(r.stdout.indexOf("OK")>=0?"已恢复出厂":"失败", r.stdout.indexOf("OK")<0);
+  setTimeout(status,600);
+};
+document.getElementById("b-boot").onclick=async()=>{
+  const on = D.cfg_auto_boot!=="1";
+  const r=await sh(`sh ${CTL} setboot ${on?1:0}`);
+  toast(on?"开机自启已开启":"开机自启已关闭", r.stdout.indexOf("OK")<0);
+  setTimeout(status,400);
+};
+
+status().catch(e=>toast(e.message,true));
+setInterval(()=>{ if(!busy) status().catch(()=>{}); }, 4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# 打包产物
+*.zip
+*.7z
+
+# 本地调试
+*.log
+.idea/
+.vscode/

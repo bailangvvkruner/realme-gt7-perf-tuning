@@ -1,0 +1,6 @@
+id=perf_ctl
+name=性能控制
+version=v1.1.1
+versionCode=111
+author=local
+description=CPU 三集群限频 + uclamp 调度上限 + GPU 档位。实测 oiface 无需停止。含 WebUI 手动调节。
